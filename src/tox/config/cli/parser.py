@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from colorama import Fore
 
-from tox.config.loader.str_convert import StrConvert
 from tox.plugin import NAME
 from tox.util.ci import is_ci
 
@@ -126,13 +125,13 @@ class Parsed(Namespace):
 
     @property
     def verbosity(self) -> int:
-        """:return: reporting verbosity"""
+        """:returns: reporting verbosity"""
         result: int = max(self.verbose - self.quiet, 0)
         return result
 
     @property
     def is_colored(self) -> bool:
-        """:return: flag indicating if the output is colored or not"""
+        """:returns: flag indicating if the output is colored or not"""
         return cast("bool", self.colored == "yes")
 
     exit_and_dump_after: int
@@ -360,11 +359,12 @@ def add_verbosity_flags(parser: ArgumentParser) -> None:
 
 
 def add_color_flags(parser: ArgumentParser) -> None:
-    converter = StrConvert()
     if os.environ.get("NO_COLOR", ""):
         color = "no"
-    elif converter.to_bool(os.environ.get("FORCE_COLOR", "")):
+    elif os.environ.get("FORCE_COLOR", ""):
         color = "yes"
+    elif (tty_compat := os.environ.get("TTY_COMPATIBLE", "")) in {"0", "1"}:
+        color = "yes" if tty_compat == "1" else "no"
     elif os.environ.get("TERM", "") == "dumb":
         color = "no"
     else:

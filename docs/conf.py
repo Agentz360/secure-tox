@@ -44,7 +44,9 @@ extensions = [
     "sphinx_inline_tabs",
     "sphinx_copybutton",
     "sphinx_issues",  # :user: and similar roles
+    "sphinxcontrib.mermaid",
 ]
+mermaid_output_format = "raw"
 
 exclude_patterns = ["_build", "changelog/*", "_draft.rst"]
 autoclass_content, autodoc_member_order, autodoc_typehints = "class", "bysource", "none"
@@ -103,7 +105,8 @@ def setup(app: Sphinx) -> None:
     towncrier = exe.with_name(f"towncrier{exe.suffix}")
     cmd = [str(towncrier), "build", "--draft", "--version", "NEXT"]
     new = check_output(cmd, cwd=root, text=True, stderr=subprocess.DEVNULL)
-    (root / "docs" / "_draft.rst").write_text("" if "No significant changes" in new else new)
+    draft = "" if "No significant changes" in new else new
+    (root / "docs" / "_draft.rst").write_text(draft if draft.endswith("\n") else f"{draft}\n")
 
     class PatchedPythonDomain(PythonDomain):
         def resolve_xref(  # noqa: PLR0913
