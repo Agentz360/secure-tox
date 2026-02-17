@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from subprocess import check_call
+from subprocess import CalledProcessError, check_call, run
 
 from git import Commit, Head, Remote, Repo, TagReference
 from packaging.version import Version
@@ -131,30 +131,24 @@ def tag_release_commit(release_commit: Commit, repo: Repo, version: Version) -> 
 
 def create_github_release(version: Version) -> None:
     print("create github release")  # noqa: T201
-    changelog_file = ROOT_SRC_DIR / "docs" / "changelog.rst"
-    changelog_content = changelog_file.read_text()
     version_str = str(version)
-    start_marker = f"v{version_str}"
-    lines = changelog_content.splitlines()
-    start_idx = None
-    for i, line in enumerate(lines):
-        if start_marker in line:
-            start_idx = i
-            break
-    if start_idx is None:
-        msg = f"Could not find version {version_str} in changelog"
-        raise RuntimeError(msg)
-    notes_lines = []
-    for i in range(start_idx + 1, len(lines)):
-        line = lines[i]
-        if line.startswith("v") and any(c.isdigit() for c in line[:10]):
-            break
-        notes_lines.append(line)
-    notes = "\n".join(notes_lines).strip()
-    check_call(
-        ["gh", "release", "create", version_str, "--title", f"v{version_str}", "--notes", notes],  # noqa: S607
-        cwd=str(ROOT_SRC_DIR),
-    )
+    try:
+        result = run(
+            ["gh", "release", "create", version_str, "--title", f"v{version_str}", "--generate-notes"],  # noqa: S607
+            cwd=str(ROOT_SRC_DIR),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if result.stdout:
+            print(result.stdout)  # noqa: T201
+    except CalledProcessError as e:
+        print(f"gh release create failed with exit code {e.returncode}")  # noqa: T201
+        if e.stdout:
+            print(f"stdout: {e.stdout}")  # noqa: T201
+        if e.stderr:
+            print(f"stderr: {e.stderr}")  # noqa: T201
+        raise
 
 
 if __name__ == "__main__":
