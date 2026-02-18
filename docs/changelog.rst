@@ -6,21 +6,80 @@
 
 .. towncrier release notes start
 
-*********************
+**********************
+ v4.38.0 (2026-02-17)
+**********************
+
+Features - 4.38.0
+=================
+
+- Scope dependency rejection in PEP-517 package environments to only pure PEP-517 build types (``sdist``, ``wheel``,
+  ``editable``), allowing non-standard package types like ``editable-legacy`` to specify dependencies - by
+  :user:`rahuldevikar`. (:issue:`3731`)
+
+**********************
+ v4.37.0 (2026-02-17)
+**********************
+
+Features - 4.37.0
+=================
+
+- Add ``extra_setup_commands`` configuration option to run commands after dependency and package installation but before
+  test commands, useful with ``--notest`` for separating setup from execution - by :user:`gaborbernat`. (:issue:`1504`)
+
+Bugfixes - 4.37.0
+=================
+
+- Set ``PIP_USER=0`` environment variable when running pip commands in virtualenvs to prevent pip from attempting
+  ``--user`` installs when users have ``pip config --user`` configured globally — by :user:`gaborbernat`.
+  (:issue:`3010`)
+- Fix TOML env_run_base and env_pkg_base deps being clobbered when referenced with additional deps in testenv
+  configuration (:issue:`3393`)
+- Normalize extra names when resolving dependencies so that underscores and hyphens are treated equivalently (e.g.
+  ``extras = snake_case`` now matches ``Provides-Extra: snake-case`` in wheel metadata) - by :user:`Fridayai700`.
+  (:issue:`3433`)
+- Fix ``setenv`` modifications to ``PATH`` being overwritten when tox environment paths are set up - by
+  :user:`Fridayai700` (:issue:`3445`)
+- Fix ``deps`` entries with ``~=`` version specifier being incorrectly treated as local paths instead of being passed
+  through to pip - by :user:`Fridayai700`. (:issue:`3447`)
+- Fix factor selection via ``TOX_FACTORS`` environment variable producing wrong results because ``append`` +
+  ``nargs="+"`` actions need nested list types for proper env var conversion - by :user:`Fridayai700`. (:issue:`3557`)
+- Fix custom ``install_command`` being ignored when specified in TOML configuration (``tox.toml``/``pyproject.toml``) -
+  by :user:`Fridayai700`. (:issue:`3574`)
+- Fix env names containing dots (e.g. ``py3.11``) losing their description in TOML configuration - by
+  :user:`Fridayai700`. (:issue:`3590`)
+- Run pre-commit on changelog.rst after towncrier build to ensure proper formatting before committing the release
+  (:issue:`3717`)
+- Fix type checker CI failure by adding ``completion`` extras to ``type`` and ``type-min`` environments so ``ty`` can
+  resolve the ``argcomplete`` import - by :user:`gaborbernat`. (:issue:`3728`)
+
+Documentation - 4.37.0
+======================
+
+- Restructured documentation using the Diátaxis framework to separate Tutorial, How-to guides, Reference, and
+  Explanation content for better discoverability and user experience. (:issue:`3718`)
+
+**********************
  v4.36.1 (2026-02-17)
-*********************
+**********************
 
 Bugfixes - 4.36.1
 =================
-- Report TOML parse errors during config discovery instead of silently ignoring them - by :user:`rahuldevikar`. (:issue:`3030`)
-- Adopt CPython's subprocess stream handling to fix deadlocks and improve performance when reading subprocess output (:issue:`3715`)
+
+- Report TOML parse errors during config discovery instead of silently ignoring them - by :user:`rahuldevikar`.
+  (:issue:`3030`)
+- Adopt CPython's subprocess stream handling to fix deadlocks and improve performance when reading subprocess output
+  (:issue:`3715`)
 
 Documentation - 4.36.1
 ======================
-- Add Unix man page generation and installation support using sphinx-argparse-cli - by :user:`gaborbernat`. (:issue:`1409`)
-- Document use of Python :mod:`logging` for plugin authors in the how-to guides, covering verbosity levels, coloring, and
-  best practices — by :user:`rahuldevikar`. (:issue:`3449`)
-- Add architecture documentation for new contributors under the development section - by :user:`rahuldevikar` (:issue:`3707`)
+
+- Add Unix man page generation and installation support using sphinx-argparse-cli - by :user:`gaborbernat`.
+  (:issue:`1409`)
+- Document use of Python :mod:`logging` for plugin authors in the how-to guides, covering verbosity levels, coloring,
+  and best practices — by :user:`rahuldevikar`. (:issue:`3449`)
+- Add architecture documentation for new contributors under the development section - by :user:`rahuldevikar`
+  (:issue:`3707`)
 
 **********************
  v4.36.0 (2026-02-15)
@@ -233,7 +292,7 @@ Bugfixes - 4.30.0
 Features - 4.29.0
 =================
 
-- A new tox life cycle event is now exposed for use via :doc:`Plugins API </plugins/index>` -- by :user:`webknjaz`.
+- A new tox life cycle event is now exposed for use via :doc:`Plugins API </plugin/index>` -- by :user:`webknjaz`.
 
   The corresponding hook point is :func:`tox_extend_envs <tox.plugin.spec.tox_extend_envs>`. It allows plugin authors to
   declare ephemeral environments that they can then populate through the in-memory configuration loader interface.

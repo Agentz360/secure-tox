@@ -134,6 +134,7 @@ pkg-meta = [
 release = [
   "gitpython>=3.1.46",
   "packaging>=26",
+  "pre-commit>=4.5.1",
   "towncrier>=25.8",
 ]
 
@@ -220,6 +221,7 @@ filterwarnings = [
   "ignore:unclosed database in <sqlite3.Connection object at:ResourceWarning",
   "ignore:unclosed file <_io.TextIOWrapper:ResourceWarning",
   "ignore:subprocess .* is still running:ResourceWarning",
+  "ignore:os.path.commonprefix\\(\\) is deprecated:DeprecationWarning",        # https://github.com/pygments/pygments/issues/3039 https://github.com/pypa/pyproject-hooks/issues/223
 ]
 tmp_path_retention_policy = "failed"
 timeout = 30

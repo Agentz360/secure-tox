@@ -7,6 +7,19 @@
 tox configuration can be split into two categories: core and environment specific. Core settings are options that can be
 set once and used for all tox environments, while environment options are applied to the given tox environment only.
 
+.. _compatibility-requirements:
+
+*********************
+ System requirements
+*********************
+
+tox works with the following Python interpreter implementations:
+
+- `CPython <https://www.python.org/>`_ versions 3.10, 3.11, 3.12, 3.13, 3.14
+
+This means tox works on the latest patch version of each of these minor versions. Previous patch versions are supported
+on a best effort approach.
+
 **************************
  Discovery and file types
 **************************
@@ -806,6 +819,9 @@ always set regardless of the ``pass_env`` or ``set_env`` configuration and canno
       - The directory of the current tox environment (e.g. ``.tox/3.12``).
     - - ``PYTHONIOENCODING``
       - Always set to ``utf-8`` to ensure consistent encoding for standard I/O.
+    - - ``PIP_USER``
+      - Always set to ``0`` to prevent pip from attempting ``--user`` installs inside virtualenvs, which would fail
+        because user site-packages aren't visible. Only set when using ``virtualenv``\-based environments.
     - - ``TOX_PACKAGE``
       - The path(s) to the built package artifact(s), joined by ``os.pathsep`` if there are multiple. Only set in run
         environments where a package has been built.
@@ -963,6 +979,46 @@ Run
        via the ``-e`` tox will only run those three (even if ``coverage`` may specify as ``depends`` other targets too -
        such as ``3.13, 3.12, 3.11``). This is solely meant to specify dependencies and order in between a target run
        set.
+
+.. conf::
+    :keys: extra_setup_commands
+    :default: <empty list>
+    :version_added: 4.37
+
+    Commands to execute after the setup phase (dependencies and package installation) but before test commands.
+    These commands run during the ``--notest`` phase, making them useful for separating environment setup from
+    test execution. All evaluation and configuration logic applies from :ref:`commands`.
+
+    This is particularly useful when you want to use ``tox run --notest`` to set up the environment and install
+    additional tools or perform setup tasks, while keeping the actual test execution separate.
+
+    For example, to install pre-commit hooks during the setup phase:
+
+    .. tab:: TOML
+
+       .. code-block:: toml
+
+          [tool.tox.env_run_base]
+          deps = ["pre-commit"]
+          extra_setup_commands = [
+            ["pre-commit", "install-hooks"],
+          ]
+          commands = [
+            ["pre-commit", "run", "--all-files"],
+          ]
+
+    .. tab:: INI
+
+       .. code-block:: ini
+
+          [testenv]
+          deps = pre-commit
+          extra_setup_commands = pre-commit install-hooks
+          commands = pre-commit run --all-files
+
+    When running ``tox run --notest``, the environment will be created, dependencies installed, and
+    ``extra_setup_commands`` executed, but ``commands`` will be skipped. When running ``tox run`` without
+    ``--notest``, all commands including ``extra_setup_commands`` will execute.
 
 .. conf::
     :keys: commands_pre

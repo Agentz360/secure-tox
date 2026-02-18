@@ -16,7 +16,8 @@ can set up environments for and invoke:
 - build and publishing tools (e.g., :pypi:`build` with :pypi:`twine`),
 - ...
 
-For a step-by-step introduction, see the :doc:`getting_started` tutorial. For practical recipes, see :doc:`howto`.
+For a step-by-step introduction, see the :doc:`tutorial/getting-started` tutorial. For practical recipes, see
+:doc:`how-to/usage`.
 
 *****************
  System overview
@@ -37,8 +38,9 @@ Below is a graphical representation of the tox lifecycle:
             create --> deps[Install dependencies]
             deps --> pkg{package project?}
             pkg -- yes --> build[Build and install package]
-            pkg -- no --> cmds
-            build --> cmds
+            pkg -- no --> extra
+            build --> extra[Run extra_setup_commands]
+            extra --> cmds
             cmds[Run commands]
         end
 
@@ -48,6 +50,7 @@ Below is a graphical representation of the tox lifecycle:
         classDef configStyle fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
         classDef envStyle fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#14532d
         classDef pkgStyle fill:#ffedd5,stroke:#f97316,stroke-width:2px,color:#7c2d12
+        classDef setupStyle fill:#fde68a,stroke:#fbbf24,stroke-width:2px,color:#78350f
         classDef cmdStyle fill:#ede9fe,stroke:#8b5cf6,stroke-width:2px,color:#3b0764
         classDef reportStyle fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#134e4a
         classDef decisionStyle fill:#fef9c3,stroke:#eab308,stroke-width:2px,color:#713f12
@@ -55,6 +58,7 @@ Below is a graphical representation of the tox lifecycle:
         class config configStyle
         class create,deps envStyle
         class build pkgStyle
+        class extra setupStyle
         class cmds cmdStyle
         class report reportStyle
         class pkg decisionStyle
@@ -77,7 +81,9 @@ The primary tox states are:
       configuration section, and then the earlier packaged source distribution. By default ``pip`` is used to install
       packages, however one can customize this via ``install_command``.
    3. **Packaging** (optional): create a distribution of the current project (see :ref:`packaging` below).
-   4. **Commands**: run the specified commands in the specified order. Whenever the exit code of any of them is not
+   4. **Extra setup commands** (optional): run the :ref:`extra_setup_commands` specified. These execute after all
+      installations complete but before test commands, and run during the ``--notest`` phase.
+   5. **Commands**: run the specified commands in the specified order. Whenever the exit code of any of them is not
       zero, stop and mark the environment failed. When you start a command with a dash character, the exit code will be
       ignored.
 
@@ -107,8 +113,8 @@ External commands need to be explicitly allowed via :ref:`allowlist_externals`.
    virtualenv first.
 4. **set_env** -- values defined here are applied last and can override anything from the previous steps, including
    ``PATH``.
-5. **Injected variables** -- tox adds ``TOX_ENV_NAME``, ``TOX_WORK_DIR``, ``TOX_ENV_DIR``, ``VIRTUAL_ENV``, and
-   ``PYTHONIOENCODING=utf-8``. These cannot be overridden.
+5. **Injected variables** -- tox adds ``TOX_ENV_NAME``, ``TOX_WORK_DIR``, ``TOX_ENV_DIR``, ``VIRTUAL_ENV``,
+   ``PIP_USER=0``, and ``PYTHONIOENCODING=utf-8``. These cannot be overridden.
 
 **PATH behavior**: because tox prepends the virtualenv ``bin/`` directory to ``PATH`` at step 3, commands like
 ``python`` and ``pip`` resolve to the virtualenv versions. If you override ``PATH`` in ``set_env``, be aware that this
@@ -435,25 +441,9 @@ The fail-fast behavior:
 - Environments not yet started are skipped with exit code -2 and marked as ``SKIP`` in the output.
 - The overall tox exit code will be the exit code of the first failed environment.
 
-*****************
- Quick reference
-*****************
-
-CLI shortcuts
-=============
-
-- Each tox subcommand has a 1 (or 2) letter shortcut, e.g. ``tox run`` = ``tox r``, ``tox config`` = ``tox c``.
-- Run all default environments: ``tox`` (runs everything in :ref:`env_list`).
-- Run a specific environment: ``tox run -e 3.13``.
-- Run multiple environments: ``tox run -e lint,3.13`` (sequential, in order).
-- Run environments in parallel: ``tox parallel -e 3.13,3.12`` (see :ref:`parallel_mode`).
-- Run all environments matching a label: ``tox run -m test`` (see :ref:`labels`).
-- Run all environments matching a factor: ``tox run -f django`` (runs all envs containing the ``django`` factor).
-- Inspect configuration: ``tox config -e 3.13 -k pass_env``.
-- Force recreation: ``tox run -e 3.13 -r``.
-
-Configuration inheritance
-=========================
+***************************
+ Configuration inheritance
+***************************
 
 Every tox environment has its own configuration section. If a value is not defined in the environment-specific section,
 it falls back to the base section (:ref:`base` configuration). For ``tox.toml`` this is the ``env_run_base`` table, for
@@ -480,22 +470,6 @@ it falls back to the base section (:ref:`base` configuration). For ``tox.toml`` 
          description = run the test suite with pytest
 
 Here ``test`` inherits ``commands`` from the base because it is not specified in ``[env.test]``.
-
-Environment variables
-=====================
-
-- View environment variables: ``tox c -e 3.13 -k set_env pass_env``.
-- Pass through system environment variables: use :ref:`pass_env`.
-- Set environment variables: use :ref:`set_env`.
-- Setup commands: :ref:`commands_pre`. Teardown commands: :ref:`commands_post`.
-- Change working directory: :ref:`change_dir` (affects install commands too if using relative paths).
-
-Logging
-=======
-
-tox logs command invocations inside ``.tox/<env_name>/log``. Environment variables with names containing sensitive words
-(``access``, ``api``, ``auth``, ``client``, ``cred``, ``key``, ``passwd``, ``password``, ``private``, ``pwd``,
-``secret``, ``token``) are logged with their values redacted to prevent accidental secret leaking in CI/CD environments.
 
 ******************
  Related projects
