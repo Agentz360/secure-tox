@@ -7,6 +7,59 @@
 .. towncrier release notes start
 
 **********************
+ v4.41.0 (2026-02-19)
+**********************
+
+Features - 4.41.0
+=================
+
+- Add ``package = "deps-only"`` mode that installs the package's dependencies (including extras) without building or
+  installing the package itself. For projects with static :PEP:`621` metadata, dependencies are read directly from
+  ``pyproject.toml`` without creating a packaging environment - by :user:`gaborbernat`. (:issue:`2301`)
+- Prefer TOML-native configuration (``[tool.tox]``) over ``legacy_tox_ini`` when both are present in ``pyproject.toml``,
+  allowing users to include a ``legacy_tox_ini`` section with ``min_version`` for older tox versions while using native
+  TOML config for newer ones - by :user:`rahuldevikar`. (:issue:`3402`)
+
+Bugfixes - 4.41.0
+=================
+
+- Fix PEP 517 backend crash detection to handle both ``ENOENT`` (missing interpreter) and runtime crashes without
+  hanging, and fix flaky ``test_provision_install_pkg_pep517`` integration test by using a pre-built wheel instead of an
+  sdist to avoid devpi mirror dependency on setuptools - by :user:`gaborjbernat`. (:issue:`3774`)
+
+**********************
+ v4.40.0 (2026-02-19)
+**********************
+
+Features - 4.40.0
+=================
+
+- Add ``{glob:PATTERN}`` substitution to expand file system glob/wildcard patterns in configuration values. Supports
+  default values, recursive ``**`` matching, and both INI string syntax and TOML dict syntax (``{ replace = "glob",
+  pattern = "..." }``) - by :user:`gaborbernat`. (:issue:`1571`)
+- Add ``commands_retry`` configuration option to automatically retry failed commands - by :user:`gaborbernat`.
+  (:issue:`1578`)
+- Automatically create a ``.gitignore`` file containing ``*`` in the tox work directory (typically ``.tox/``) and in
+  environment info directories, so that tox-managed files are not tracked by git - by :user:`rahuldevikar`.
+  (:issue:`2530`)
+- Add conditional value selection via ``replace = "if"`` in TOML configuration. Supports a ``condition`` expression with
+  ``env.VAR`` lookups, ``==``/``!=`` comparisons, and ``and``/``or``/``not`` boolean logic to select between ``then``
+  and ``else`` values - by :user:`gaborbernat`. (:issue:`3650`)
+- Add ``sdist-wheel`` package type that builds a wheel from a source distribution, ensuring the sdist is complete and
+  the package can be correctly built from it — by :user:`rahuldevikar`. (:issue:`3687`)
+
+Bugfixes - 4.40.0
+=================
+
+- Use positive exit code (``1``) instead of ``-1`` when reporting failures across multiple environments. On Windows,
+  ``cmd.exe``'s ``IF ERRORLEVEL 1`` only matches exit codes ``>= 1``, so the previous negative exit code was silently
+  treated as success - by :user:`radevika`. Fixes :issue:`2945`. (:issue:`2945`)
+- When ``set_env`` both inherits via cross-section substitution (e.g., ``{[testenv]set_env}``) and explicitly overrides
+  the same variable, the explicit value was incorrectly replaced by the inherited one because ``load()`` moved the key
+  from the raw dict to the materialized dict before the deferred substitution ran, making the protection check
+  ineffective - by :user:`gaborjbernat`. Fixes :issue:`3773`. (:issue:`3773`)
+
+**********************
  v4.39.0 (2026-02-18)
 **********************
 

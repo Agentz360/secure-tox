@@ -85,7 +85,8 @@ The primary tox states are:
       installations complete but before test commands, and run during the ``--notest`` phase.
    5. **Commands**: run the specified commands in the specified order. Whenever the exit code of any of them is not
       zero, stop and mark the environment failed. When you start a command with a dash character, the exit code will be
-      ignored.
+      ignored. If :ref:`commands_retry` is set, failed commands are retried up to the configured number of times before
+      being treated as a failure.
 
 3. **Report** print out a report of outcomes for each tox environment:
 
@@ -146,6 +147,35 @@ conditionally set variables based on platform:
         COVERAGE_FILE = {work_dir}/.coverage.{env_name}
         LDFLAGS = -L/usr/local/lib ; sys_platform == "darwin"
 
+.. _conditional-values-explained:
+
+Conditional value evaluation
+============================
+
+.. versionadded:: 4.40
+
+TOML configurations support ``replace = "if"`` to conditionally select values at configuration load time. The
+``condition`` field accepts expressions that are parsed using Python's ``ast`` module and evaluated against the host
+``os.environ``.
+
+The expression language supports:
+
+- ``env.VAR`` -- resolves to the value of the environment variable ``VAR``, or empty string if unset. An empty string is
+  falsy, any non-empty string is truthy.
+- ``'literal'`` -- a string literal for comparison.
+- ``==``, ``!=`` -- string equality and inequality.
+- ``and``, ``or``, ``not`` -- boolean combinators with standard Python precedence.
+
+Conditions are evaluated before ``set_env`` is applied. The ``env.VAR`` lookup reads directly from ``os.environ``, not
+from the tox ``set_env`` configuration. This avoids circular dependencies -- a ``set_env`` value can use ``replace =
+"if"`` to check a host variable without triggering a recursive load.
+
+Both ``then`` and ``else`` values are processed through the normal TOML replacement pipeline, so they can contain nested
+substitutions like ``{env_name}`` or ``{ replace = "env", ... }``. Only the selected branch is evaluated.
+
+For syntax details and examples, see :ref:`conditional-value-reference`. For practical recipes, see
+:ref:`howto_conditional_values`.
+
 Dependency change detection
 ===========================
 
@@ -203,6 +233,7 @@ The :ref:`package` configuration controls how the project is packaged:
         pkg{package setting}
         pkg -- sdist --> sdist[sdist — default]
         pkg -- wheel --> wheel[wheel — faster install]
+        pkg -- sdist-wheel --> sdistwheel[sdist-wheel — build wheel from sdist]
         pkg -- editable --> editable[editable — PEP 660]
         pkg -- editable-legacy --> legacy[editable-legacy — pip -e]
         pkg -- skip --> skip[skip — no packaging]
@@ -210,6 +241,8 @@ The :ref:`package` configuration controls how the project is packaged:
 
         sdist --> env_pkg[build env: .pkg]
         wheel --> env_wheel[build env: .pkg-cpython313]
+        sdistwheel --> env_pkg[sdist in: .pkg]
+        sdistwheel --> env_wheel2[wheel in: .pkg-cpython313]
         editable --> env_wheel
         legacy --> env_pkg
         skip --> no_env[no build env]
@@ -221,12 +254,14 @@ The :ref:`package` configuration controls how the project is packaged:
         classDef skipStyle fill:#f3f4f6,stroke:#9ca3af,stroke-width:2px,color:#374151
 
         class pkg decisionStyle
-        class sdist,wheel,editable,legacy,external pkgStyle
-        class env_pkg,env_wheel envStyle
+        class sdist,wheel,sdistwheel,editable,legacy,external pkgStyle
+        class env_pkg,env_wheel,env_wheel2 envStyle
         class skip,no_env skipStyle
 
 - ``sdist`` (default): builds a source distribution
 - ``wheel``: builds a wheel (much faster to install)
+- ``sdist-wheel``: builds a source distribution first, then builds a wheel from that sdist (validates sdist
+  completeness)
 - ``editable``: builds an editable wheel as defined by :PEP:`660`
 - ``editable-legacy``: invokes pip with ``-e`` (fallback when the backend doesn't support PEP 660)
 - ``skip``: skips packaging entirely (useful for tools like linters that don't need the project installed)
@@ -239,6 +274,8 @@ tox uses a virtual environment for building, whose name depends on the artifact 
 
 - For source distributions: the :ref:`package_env` (default ``.pkg``)
 - For wheels: the :ref:`wheel_build_env` (default ``.pkg-<impl><version>``, e.g. ``.pkg-cpython313``)
+- For sdist-wheel: uses two environments — the :ref:`package_env` for building the sdist, and the :ref:`wheel_build_env`
+  (default ``.pkg-<impl><version>``) for building the wheel from the extracted sdist
 
 For pure Python projects (no C extensions), set :ref:`wheel_build_env` to the same value as :ref:`package_env`. This way
 the wheel is built once and reused for all tox environments:
@@ -479,18 +516,33 @@ Interactive terminal programs
 =============================
 
 Programs that require advanced terminal control — such as IPython, debuggers with rich UIs, or any tool built on
-`prompt_toolkit <https://python-prompt-toolkit.readthedocs.io/>`__ — may not work correctly under tox.
+`prompt_toolkit <https://python-prompt-toolkit.readthedocs.io/>`__ — need direct terminal access to work correctly.
 
-tox captures subprocess output by routing ``stdout`` and ``stderr`` through pseudo-terminal (PTY) pairs. This is
-necessary for logging, result reporting, and colorized output. However, the subprocess's ``stdin`` remains connected to
-the real terminal. This means ``stdin`` and ``stdout`` are on *different* terminal devices.
+By default, tox captures subprocess output by routing ``stdout`` and ``stderr`` through pseudo-terminal (PTY) pairs.
+This is necessary for logging, result reporting, and colorized output. However, the subprocess's ``stdin`` remains
+connected to the real terminal. This means ``stdin`` and ``stdout`` are on *different* terminal devices.
 
 Libraries like ``prompt_toolkit`` assume all streams share the same terminal. They set raw mode on ``stdin`` (to read
 individual keystrokes) while writing VT100 escape sequences to ``stdout`` (for cursor positioning, screen clearing,
 etc.). When ``stdout`` goes through tox's capture buffer instead of directly to the terminal, escape sequences are
 delayed and the synchronous terminal control these libraries depend on breaks.
 
-Workarounds:
+Solution:
+
+Use the ``--no-capture`` (or ``-i``) flag to disable output capture and give the subprocess direct terminal access:
+
+.. code-block:: bash
+
+    # Run IPython with full terminal support
+    tox run -e 3.13 -i -- ipython
+
+    # Run debugger interactively
+    tox run -e 3.13 -i -- python -m pdb script.py
+
+This flag is mutually exclusive with ``--result-json`` and parallel mode. See :ref:`run-interactive-programs` for
+details.
+
+Alternative workarounds if you cannot use ``--no-capture``:
 
 - For IPython, pass ``--simple-prompt`` to disable ``prompt_toolkit``'s advanced terminal features.
 - For other tools, look for a "dumb terminal" or "no-color" mode that avoids VT100 escape sequences.

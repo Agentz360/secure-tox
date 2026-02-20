@@ -36,9 +36,9 @@ Out of box tox supports five configuration locations prioritized in the followin
     flowchart TD
         search[tox searches current directory] --> tox_ini
         tox_ini[tox.ini — INI] -- not found --> setup_cfg[setup.cfg — INI]
-        setup_cfg -- not found --> pyproject_legacy[pyproject.toml — legacy_tox_ini]
-        pyproject_legacy -- not found --> pyproject_native[pyproject.toml — tool.tox]
-        pyproject_native -- not found --> tox_toml[tox.toml — TOML]
+        setup_cfg -- not found --> pyproject_native[pyproject.toml — tool.tox]
+        pyproject_native -- not found --> pyproject_legacy[pyproject.toml — legacy_tox_ini]
+        pyproject_legacy -- not found --> tox_toml[tox.toml — TOML]
 
         classDef ini fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
         classDef toml fill:#dcfce7,stroke:#22c55e,stroke-width:2px,color:#14532d
@@ -50,8 +50,8 @@ Out of box tox supports five configuration locations prioritized in the followin
 
 1. ``tox.ini`` (INI),
 2. ``setup.cfg`` (INI),
-3. ``pyproject.toml`` with the ``tool.tox`` table, having ``legacy_tox_ini`` key (containing INI),
-4. Native ``pyproject.toml`` under the ``tool.tox`` table (TOML),
+3. Native ``pyproject.toml`` under the ``tool.tox`` table (TOML),
+4. ``pyproject.toml`` with the ``tool.tox`` table, having ``legacy_tox_ini`` key (containing INI),
 5. ``tox.toml`` (TOML).
 
 Historically, the INI format was created first, and TOML was added in 2024. **TOML is the recommended format for new
@@ -66,23 +66,50 @@ TOML feature gaps
 
 The following INI features are not yet available in TOML. Contributions to add support are welcome.
 
-**Conditional factors** -- INI allows lines to be filtered by factor name. A factor is any dash-separated segment in the
-environment name (e.g. ``py313-django50`` has factors ``py313`` and ``django50``):
+**Conditional factors** -- Both INI and TOML support filtering by factor name. A factor is any dash-separated segment in
+the environment name (e.g. ``py313-django50`` has factors ``py313`` and ``django50``). Additionally, the current
+platform (``sys.platform`` value like ``linux``, ``darwin``, ``win32``) is automatically available as an implicit
+factor.
 
-.. code-block:: ini
+.. tab:: INI
 
-    [testenv]
-    deps =
-        pytest
-        django50: Django>=5.0,<5.1
-        django42: Django>=4.2,<4.3
-        !lint: coverage
-    commands =
-        linux: python -c 'print("on linux")'
-        darwin: python -c 'print("on mac")'
+    .. code-block:: ini
 
-Supports simple factors (``django50:``), multiple factors (``py313,py312:``), and negation (``!lint:``). Any multi-line
-setting (``deps``, ``commands``, ``set_env``, etc.) can use factor conditions.
+        [testenv]
+        deps =
+            pytest
+            django50: Django>=5.0,<5.1
+            django42: Django>=4.2,<4.3
+            !lint: coverage
+        commands =
+            linux: python -c 'print("on linux")'
+            darwin: python -c 'print("on mac")'
+            win32: python -c 'print("on windows")'
+
+    Supports simple factors (``django50:``), multiple factors (``py313,py312:``), and negation (``!lint:``). Any
+    multi-line setting (``deps``, ``commands``, ``set_env``, etc.) can use factor conditions.
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+        [env_run_base]
+        deps = [
+            "pytest",
+            { replace = "if", condition = "factor.django50", then = ["Django>=5.0,<5.1"] },
+            { replace = "if", condition = "factor.django42", then = ["Django>=4.2,<4.3"] },
+            { replace = "if", condition = "not factor.lint", then = ["coverage"] },
+        ]
+        commands = [
+            { replace = "if", condition = "factor.linux", then = [["python", "-c", "print('on linux')"]] },
+            { replace = "if", condition = "factor.darwin", then = [["python", "-c", "print('on mac')"]] },
+            { replace = "if", condition = "factor.win32", then = [["python", "-c", "print('on windows')"]] },
+        ]
+
+    Use ``replace = "if"`` with ``factor.NAME`` conditions. Supports boolean operations (``and``, ``or``, ``not``) and
+    can combine with environment variable checks (``env.VAR``).
+
+Platform factors work in any environment without requiring the platform name in the environment name.
 
 **Generative environment lists** -- INI expands curly-brace expressions into the Cartesian product of all combinations:
 
@@ -102,6 +129,22 @@ Ranges are also supported: ``py3{12-14}`` expands to ``py312``, ``py313``, ``py3
     envdir =
         x86: .venv-x86
         x64: .venv-x64
+
+TOML does not support generative section names, but you can use factor conditions in individual environment sections:
+
+.. code-block:: toml
+
+    [env."py312-x86"]
+    env_dir = { replace = "if", condition = "factor.x86", then = ".venv-x86", "else" = ".venv-x64" }
+
+    [env."py312-x64"]
+    env_dir = { replace = "if", condition = "factor.x64", then = ".venv-x64", "else" = ".venv-x86" }
+
+    [env."py313-x86"]
+    env_dir = { replace = "if", condition = "factor.x86", then = ".venv-x86", "else" = ".venv-x64" }
+
+    [env."py313-x64"]
+    env_dir = { replace = "if", condition = "factor.x64", then = ".venv-x64", "else" = ".venv-x86" }
 
 .. _tox-ini:
 
@@ -1103,6 +1146,31 @@ Run
     setting is analogous to the ``-k`` or ``--keep-going`` option of GNU Make.
 
 .. conf::
+    :keys: commands_retry
+    :default: 0
+    :version_added: 4.41
+
+    Number of times to retry a failed command before giving up. A value of ``N`` means each command can be attempted up
+    to ``N + 1`` times total. Applies to :ref:`commands_pre`, :ref:`commands`, and :ref:`commands_post`. Commands
+    prefixed with ``-`` (ignore exit code) are never retried since their failures are already ignored.
+
+    .. tab:: TOML
+
+       .. code-block:: toml
+
+          [env_run_base]
+          commands_retry = 2
+          commands = [["pytest", "tests"]]
+
+    .. tab:: INI
+
+       .. code-block:: ini
+
+          [testenv]
+          commands_retry = 2
+          commands = pytest tests
+
+.. conf::
     :keys: ignore_outcome
     :default: False
     :version_added: 2.2
@@ -1375,9 +1443,20 @@ Python run
     :keys: package
     :version_added: 4.0
 
-    When option can be one of ``wheel``, ``sdist``, ``editable``, ``editable-legacy``, ``skip``, or ``external``. If
-    :ref:`use_develop` is set this becomes a constant of ``editable``. If :ref:`skip_install` is set this becomes a
-    constant of ``skip``.
+    When option can be one of ``wheel``, ``sdist``, ``sdist-wheel``, ``editable``, ``editable-legacy``, ``deps-only``,
+    ``skip``, or ``external``. If :ref:`use_develop` is set this becomes a constant of ``editable``. If
+    :ref:`skip_install` is set this becomes a constant of ``skip``.
+
+    When ``deps-only`` is selected, tox installs the package's dependencies (including any requested :ref:`extras`) but
+    does **not** build or install the package itself. This is useful for environments that need the same dependencies as
+    the package without the package, such as coverage combining, documentation building, or linting. For projects with
+    static :pep:`621` metadata in ``pyproject.toml``, dependencies are read directly without creating a packaging
+    environment. For dynamic dependencies or non-PEP-621 projects, the packaging environment is used to extract
+    metadata.
+
+    When ``sdist-wheel`` is selected, tox first builds a source distribution and then builds a wheel from that sdist
+    (rather than directly from the source tree). This is useful for verifying that the sdist is complete and that the
+    package can be correctly built from it — catching missing files or packaging errors early.
 
     When ``editable`` is selected and the build backend supports :pep:`660`, tox will use the standardized editable
     install mechanism. If the backend does not support :pep:`660`, tox will automatically fall back to
@@ -1390,8 +1469,10 @@ Python run
     :version_added: 4.0
     :default: <package_env>-<python-flavor-lowercase><python-version-no-dot>
 
-    If :ref:`package` is set to ``wheel`` this will be the tox Python environment in which the wheel will be
-    built. The value is generated to be unique per Python flavor and version, and prefixed with :ref:`package_env` value.
+    If :ref:`package` is set to ``wheel`` or ``sdist-wheel`` this will be the tox Python environment in which the wheel
+    will be built. For ``sdist-wheel``, the sdist is first built in the :ref:`package_env` environment, then the wheel
+    is built from the extracted sdist in this environment. The value is generated to be unique per Python flavor and
+    version, and prefixed with :ref:`package_env` value.
     This is to ensure the target interpreter and the generated wheel will be compatible. If you have a wheel that can be
     reused across multiple Python versions set this value to the same across them (to avoid building a new wheel for
     each one of them).
@@ -1922,6 +2003,139 @@ dictionaries to ``set_env`` they will be merged together, for example:
 
 Here the ``magic`` tox environment will have both ``A``, ``B``, ``C`` and ``D`` environments set.
 
+Glob pattern reference
+======================
+
+.. versionadded:: 4.40
+
+You can expand file system glob patterns via the ``glob`` replacement. Matched paths are sorted for deterministic
+output, and relative patterns are resolved against ``tox_root``. The ``**`` wildcard matches any number of directories
+recursively.
+
+.. code-block:: toml
+
+    [env.A]
+    commands = [["twine", "upload", { replace = "glob", pattern = "dist/*.whl", extend = true }]]
+
+When used with ``extend = true`` the matched files are expanded as separate arguments in the host list. Without
+``extend`` the matches are joined as a single space-separated string.
+
+If no files match and a ``default`` is provided it will be used as fallback:
+
+.. code-block:: toml
+
+    [env.A]
+    commands = [["twine", "upload", { replace = "glob", pattern = "dist/*.whl", default = ["fallback.whl"], extend = true }]]
+
+When no files match and no default is given, the result is an empty string (or empty list with ``extend``).
+
+.. _conditional-value-reference:
+
+Conditional value reference
+===========================
+
+.. versionadded:: 4.40 Conditional value replacement with ``env.VAR`` lookups.
+
+.. versionchanged:: 4.42 Added ``factor.NAME`` lookups for environment name factors and platform.
+
+You can conditionally select values based on environment variables and factors via the ``if`` replacement. The
+``condition`` field accepts an expression language that supports ``env.VAR_NAME`` lookups for environment variables,
+``factor.NAME`` lookups for environment name factors and platform, ``==``/``!=`` comparisons, and ``and``/``or``/``not``
+boolean logic.
+
+**Check if an environment variable is set (non-empty):**
+
+.. code-block:: toml
+
+    [env.A]
+    set_env.MATURITY = { replace = "if", condition = "env.TAG_NAME", then = "production", "else" = "testing" }
+
+If ``TAG_NAME`` is set and non-empty, ``MATURITY`` becomes ``production``, otherwise ``testing``.
+
+**Compare an environment variable to a value:**
+
+.. code-block:: toml
+
+    [env.A]
+    set_env.MODE = { replace = "if", condition = "env.CI == 'true'", then = "ci", "else" = "local" }
+
+**Combine conditions with boolean logic:**
+
+.. code-block:: toml
+
+    [env.A]
+    description = { replace = "if", condition = "env.CI and env.DEPLOY", then = "deploying", "else" = "skipped" }
+
+    [env.B]
+    description = { replace = "if", condition = "env.CI or env.LOCAL", then = "active", "else" = "inactive" }
+
+    [env.C]
+    description = { replace = "if", condition = "not env.CI", then = "local dev", "else" = "CI build" }
+
+    [env.D]
+    description = { replace = "if", condition = "env.MODE != 'prod'", then = "non-production", "else" = "production" }
+
+**Omitting the else clause** defaults to an empty string:
+
+.. code-block:: toml
+
+    [env.A]
+    description = { replace = "if", condition = "env.DEPLOY", then = "deployment mode" }
+
+**Nested substitutions** in ``then``/``else`` values are processed normally:
+
+.. code-block:: toml
+
+    [env.A]
+    description = { replace = "if", condition = "env.DEPLOY", then = "{env_name}", "else" = "none" }
+
+**With extend in list contexts:**
+
+.. code-block:: toml
+
+    [env.A]
+    commands = [["pytest", { replace = "if", condition = "env.VERBOSE", then = ["--verbose", "--debug"], "else" = ["--quiet"], extend = true }]]
+
+**Check if a factor is present:**
+
+.. code-block:: toml
+
+    [env_run_base]
+    deps = [
+        "pytest",
+        { replace = "if", condition = "factor.django50", then = ["Django>=5.0,<5.1"] },
+    ]
+
+If the environment name contains ``django50`` (e.g., ``py313-django50``), the Django dependency is added.
+
+**Check for platform factors:**
+
+.. code-block:: toml
+
+    [env_run_base]
+    commands = [
+        { replace = "if", condition = "factor.linux", then = [["pytest", "--numprocesses=auto"]] },
+        { replace = "if", condition = "not factor.linux", then = [["pytest"]] },
+    ]
+
+The current platform (``sys.platform`` value like ``linux``, ``darwin``, ``win32``) is automatically available as a
+factor without requiring it in the environment name.
+
+**Combine factor conditions with environment variables:**
+
+.. code-block:: toml
+
+    [env_run_base]
+    commands = [["pytest", { replace = "if", condition = "factor.linux and env.CI", then = ["--numprocesses=auto"], "else" = [], extend = true }]]
+
+**Condition expression reference:**
+
+- ``env.VAR`` -- value of environment variable ``VAR`` (empty string if unset); truthy when non-empty
+- ``factor.NAME`` -- ``True`` if ``NAME`` is a factor in the environment name or platform; ``False`` otherwise
+- ``==``, ``!=`` -- string comparison
+- ``and``, ``or``, ``not`` -- boolean logic
+- ``'string'`` -- string literal
+
 **********
  INI only
 **********
@@ -2271,6 +2485,50 @@ will make the ``--opt1 ARG1`` appear in all test commands where ``[]`` or ``{pos
 ``args_are_paths`` setting), ``tox`` rewrites each positional argument if it is a relative path and exists on the
 filesystem to become a path relative to the ``changedir`` setting.
 
+.. _glob substitution:
+
+Glob pattern substitution
+=========================
+
+.. versionadded:: 4.40
+
+You can expand glob/wildcard patterns to matching file paths:
+
+::
+
+    {glob:PATTERN}
+
+Matches are sorted and returned as a space-separated string. If no files match, the result is an empty string. You can
+provide a default value for when no files match:
+
+::
+
+    {glob:PATTERN:DEFAULT}
+
+Relative patterns are resolved against ``tox_root``. Use ``**`` for recursive matching across directories.
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+        [env.A]
+        commands = [["twine", "upload", "{glob:dist/*.whl}"]]
+
+    Or using the TOML dict syntax (see :ref:`pyproject-toml-native`):
+
+    .. code-block:: toml
+
+        [env.A]
+        commands = [["twine", "upload", { replace = "glob", pattern = "dist/*.whl", extend = true }]]
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+        [testenv]
+        commands = twine upload {glob:dist/*.whl}
+        deps = {glob:requirements/*.txt:requirements.txt}
+
 Other substitutions
 ===================
 
@@ -2327,6 +2585,9 @@ or via ``{name}`` in INI.
       - Positional arguments passed after ``--``, with optional defaults.
     - - ``{tty:ON:OFF}``
       - ``ON`` value when running in an interactive terminal, ``OFF`` otherwise.
+    - - ``{glob:PATTERN}`` / ``{glob:PATTERN:DEFAULT}``
+      - Expand glob pattern to matching file paths (space-separated, sorted). Relative paths resolve against
+        ``tox_root``.
     - - ``{/}``
       - OS path separator (``/`` or ``\``).
     - - ``{:}``
@@ -2334,5 +2595,5 @@ or via ``{name}`` in INI.
     - - ``{[section]key}`` *(INI only)*
       - Value of ``key`` from ``[section]`` (cross-section reference).
 
-For TOML-specific replacement syntax (``replace = "ref"``, ``replace = "posargs"``, ``replace = "env"``), see
-:ref:`pyproject-toml-native`.
+For TOML-specific replacement syntax (``replace = "ref"``, ``replace = "posargs"``, ``replace = "env"``, ``replace =
+"glob"``, ``replace = "if"``), see :ref:`pyproject-toml-native`.

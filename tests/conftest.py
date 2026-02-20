@@ -139,7 +139,7 @@ def demo_pkg_inline_wheel(tmp_path_factory: pytest.TempPathFactory, demo_pkg_inl
 
 
 def build_pkg(dist_dir: Path, of: Path, distributions: Sequence[DistributionType], isolation: bool = True) -> Path:
-    from build.__main__ import build_package  # noqa: PLC0415,PLC2701
+    from build.__main__ import build_package  # noqa: PLC0415, PLC2701
 
     build_package(str(of), str(dist_dir), distributions=distributions, isolation=isolation)
     return next(dist_dir.iterdir())
@@ -148,6 +148,15 @@ def build_pkg(dist_dir: Path, of: Path, distributions: Sequence[DistributionType
 @pytest.fixture(scope="session")
 def pkg_builder() -> Callable[[Path, Path, Sequence[DistributionType], bool], Path]:
     return build_pkg
+
+
+@pytest.fixture(autouse=True)
+def _ensure_demo_pkg_clean() -> Iterator[None]:
+    yield
+    for path in HERE.iterdir():
+        if path.is_dir() and path.name.startswith("demo_pkg_") and (tox_dir := path / ".tox").exists():
+            msg = f"test left behind {tox_dir}, fix the test to not pollute the source tree"
+            raise AssertionError(msg)
 
 
 @pytest.fixture(scope="session", autouse=True)
