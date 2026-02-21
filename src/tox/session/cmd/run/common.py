@@ -139,6 +139,12 @@ def env_run_create_flags(parser: ArgumentParser, mode: str) -> None:
             help="skip package installation for this run",
             action="store_true",
         )
+        parser.add_argument(
+            "--skip-env-install",
+            dest="skip_env_install",
+            help="skip dependency and package installation, reuse existing environment",
+            action="store_true",
+        )
 
 
 def report(start: float, runs: list[ToxEnvRunResult], is_colored: bool, verbosity: int) -> int:  # noqa: FBT001
@@ -183,6 +189,24 @@ def _get_outcome_message(run: ToxEnvRunResult) -> tuple[str, int]:
 
 
 logger = logging.getLogger(__name__)
+
+
+def _warn_unused_config(state: State) -> None:
+    from tox.config.cli.parser import DEFAULT_VERBOSITY  # noqa: PLC0415
+
+    if state.conf.options.verbosity <= DEFAULT_VERBOSITY:
+        return
+    is_colored = state.conf.options.is_colored
+    for name in state.envs.iter():
+        if unused := state.envs[name].conf.unused():
+            _print_unused(is_colored, f"[testenv:{name}]", unused)
+    if unused := state.conf.core.unused():
+        _print_unused(is_colored, "[tox]", unused)
+
+
+def _print_unused(is_colored: bool, section: str, unused: list[str]) -> None:  # noqa: FBT001
+    msg = f"  {section} unused config key(s): {', '.join(unused)}"
+    print(f"{Fore.YELLOW if is_colored else ''}{msg}{Fore.RESET if is_colored else ''}")  # noqa: T201
 
 
 def execute(state: State, max_workers: int | None, has_spinner: bool, live: bool) -> int:  # noqa: FBT001
@@ -235,6 +259,8 @@ def execute(state: State, max_workers: int | None, has_spinner: bool, live: bool
         )
         # write the journal
         write_journal(getattr(state.conf.options, "result_json", None), state._journal)  # noqa: SLF001
+        # warn about unused config keys
+        _warn_unused_config(state)
         # report the outcome
         exit_code = report(
             state.conf.options.start,
@@ -385,7 +411,7 @@ def _handle_one_run_done(
             pkg_out_err = package_env.close_and_read_out_err()
             if pkg_out_err is not None:  # pragma: no branch
                 pkg_out_err_list.append(pkg_out_err)
-        if not success or tox_env.conf["parallel_show_output"]:
+        if not success or tox_env.conf["parallel_show_output"] or state.conf.options.list_dependencies:
             for pkg_out_err in pkg_out_err_list:
                 state._options.log_handler.write_out_err(pkg_out_err)  # pragma: no cover  # noqa: SLF001
             if out_err is not None:  # pragma: no branch # first show package build

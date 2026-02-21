@@ -103,7 +103,9 @@ Core settings affect all environments or configure how tox itself behaves. They 
        env_list = 3.13, 3.12, lint
 
 The :ref:`env_list` setting defines which environments run by default when you invoke ``tox`` without specifying any.
-For the full list of core options, see :ref:`conf-core`.
+Both formats support generating environment matrices from factor combinations — INI uses curly-brace expansion
+(``3.{10-}``), while TOML uses ``product`` dicts (``{ product = [{ prefix = "py3", start = 10 }, ["django42"]] }``). See
+:ref:`generative-environment-list` for details. For the full list of core options, see :ref:`conf-core`.
 
 Environment settings
 ====================
@@ -147,6 +149,11 @@ Each tox environment has its own configuration. Settings defined at the base lev
 
 Here the ``lint`` environment overrides the base settings entirely, while ``3.13`` and ``3.12`` inherit from the base.
 
+.. tip::
+
+    Options must go in the correct section — placing a core option in an environment section (or vice versa) silently
+    has no effect. Run ``tox run -v`` or ``tox config`` to check for misplaced keys.
+
 Environment names and Python versions
 =====================================
 
@@ -167,7 +174,20 @@ naturally in environment lists and CI output, and avoids confusion for Python ve
 digits become three characters.
 
 If the name doesn't match any pattern, tox uses the same Python as the one tox is installed into (this is the case for
-``lint`` in our example).
+``lint`` in our example). To override this fallback, set :ref:`default_base_python`:
+
+.. code-block:: toml
+
+    [env_run_base]
+    default_base_python = ["3.14", "3.13"]
+
+This pins a default Python version for environments without a Python factor, improving reproducibility across machines
+with different system Pythons.
+
+.. tip::
+
+    If your project uses :PEP:`751` lock files (``pylock.toml``), you can install locked dependencies via :ref:`pylock`
+    instead of listing packages in ``deps``.
 
 For the full list of environment options, see :ref:`conf-testenv`.
 
@@ -236,6 +256,16 @@ recreation with the ``-r`` flag:
 
     tox run -e 3.13 -r
 
+If tools inside the environment maintain their own caches (e.g. pre-commit), you can use :ref:`recreate_commands` to
+clean them before the environment directory is removed. See :ref:`howto_clean_caches` for details.
+
+If you want to rerun tests without reinstalling dependencies or the package (e.g. when working offline or when nothing
+has changed), use ``--skip-env-install``:
+
+.. code-block:: bash
+
+    tox run -e 3.13 --skip-env-install
+
 ********************************
  Listing available environments
 ********************************
@@ -269,6 +299,7 @@ This is useful for debugging configuration issues.
 Now that you have a working tox setup, explore these topics:
 
 - :doc:`../explanation` -- understand how tox works (parallel mode, packaging, auto-provisioning)
-- :doc:`../how-to/usage` -- practical recipes for common tasks
+- :doc:`../how-to/usage` -- practical recipes for common tasks (including testing across old and new Python versions
+  with :ref:`virtualenv_spec`)
 - :ref:`configuration` -- full configuration reference
 - :ref:`cli` -- complete CLI reference

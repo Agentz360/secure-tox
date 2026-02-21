@@ -289,24 +289,6 @@ The current platform (``sys.platform`` value like ``linux``, ``darwin``, ``win32
 implicit factor in all environments. Use platform factors to run different commands or set different dependencies per
 platform without encoding the platform name in the environment:
 
-.. tab:: INI
-
-    .. code-block:: ini
-
-         [tox]
-         env_list = py313
-
-         [testenv]
-         deps =
-             pytest
-             linux,darwin: platformdirs>=3
-             win32: platformdirs>=2
-         commands =
-             linux: python -c 'print("Running on Linux")'
-             darwin: python -c 'print("Running on macOS")'
-             win32: python -c 'print("Running on Windows")'
-             python -m pytest
-
 .. tab:: TOML
 
     .. code-block:: toml
@@ -327,6 +309,24 @@ platform without encoding the platform name in the environment:
              ["python", "-m", "pytest"],
          ]
 
+.. tab:: INI
+
+    .. code-block:: ini
+
+         [tox]
+         env_list = py313
+
+         [testenv]
+         deps =
+             pytest
+             linux,darwin: platformdirs>=3
+             win32: platformdirs>=2
+         commands =
+             linux: python -c 'print("Running on Linux")'
+             darwin: python -c 'print("Running on macOS")'
+             win32: python -c 'print("Running on Windows")'
+             python -m pytest
+
 This allows a single environment like ``py313`` to adapt its behavior based on the execution platform. The platform
 factors work alongside regular factors from the environment name.
 
@@ -345,6 +345,26 @@ Platform factors with environment factors
 Platform factors combine with regular environment factors. For example, an environment named ``py313-django50`` has
 factors ``py313``, ``django50``, and the current platform:
 
+.. tab:: TOML
+
+    .. code-block:: toml
+
+        env_list = [
+            { product = [["py312", "py313"], ["django42", "django50"]] },
+        ]
+
+        [env_run_base]
+        deps = [
+            { replace = "if", condition = "factor.django42", then = ["Django>=4.2,<4.3"] },
+            { replace = "if", condition = "factor.django50", then = ["Django>=5.0,<5.1"] },
+            { replace = "if", condition = "factor.py312 and factor.linux", then = ["pytest-xdist"] },
+            { replace = "if", condition = "factor.darwin", then = ["pyobjc-framework-Cocoa"] },
+        ]
+        commands = [
+            { replace = "if", condition = "factor.win32", then = [["python", "-c", "import winreg"]] },
+            ["pytest"],
+        ]
+
 .. tab:: INI
 
     .. code-block:: ini
@@ -362,35 +382,7 @@ factors ``py313``, ``django50``, and the current platform:
             win32: python -c 'import winreg'  # only runs on Windows
             pytest
 
-.. tab:: TOML
-
-    .. code-block:: toml
-
-        [env_list_base]
-        env_list = ["py312-django42", "py312-django50", "py313-django42", "py313-django50"]
-
-        [env_run_base]
-        deps = [
-            { replace = "if", condition = "factor.django42", then = ["Django>=4.2,<4.3"] },
-            { replace = "if", condition = "factor.django50", then = ["Django>=5.0,<5.1"] },
-            { replace = "if", condition = "factor.py312 and factor.linux", then = ["pytest-xdist"] },
-            { replace = "if", condition = "factor.darwin", then = ["pyobjc-framework-Cocoa"] },
-        ]
-        commands = [
-            { replace = "if", condition = "factor.win32", then = [["python", "-c", "import winreg"]] },
-            ["pytest"],
-        ]
-
 Negation also works with platform factors:
-
-.. tab:: INI
-
-    .. code-block:: ini
-
-        [testenv]
-        deps =
-            !win32: uvloop  # install uvloop on non-Windows platforms
-            !darwin: pyinotify  # install pyinotify except on macOS
 
 .. tab:: TOML
 
@@ -402,21 +394,21 @@ Negation also works with platform factors:
             { replace = "if", condition = "not factor.darwin", then = ["pyinotify"] },
         ]
 
+.. tab:: INI
+
+    .. code-block:: ini
+
+        [testenv]
+        deps =
+            !win32: uvloop  # install uvloop on non-Windows platforms
+            !darwin: pyinotify  # install pyinotify except on macOS
+
 Platform skipping vs platform factors
 =====================================
 
 There are two ways to handle platform differences:
 
 **Platform factors** (recommended) - Filter individual settings per platform:
-
-.. tab:: INI
-
-    .. code-block:: ini
-
-        [testenv]
-        commands =
-            linux: pytest --numprocesses=auto
-            darwin,win32: pytest
 
 .. tab:: TOML
 
@@ -428,16 +420,18 @@ There are two ways to handle platform differences:
             { replace = "if", condition = "factor.darwin or factor.win32", then = [["pytest"]] },
         ]
 
-Settings without a platform factor apply to all platforms. This is ideal for most cross-platform projects.
-
-**Platform skipping** - Skip entire environments when platform doesn't match:
-
 .. tab:: INI
 
     .. code-block:: ini
 
         [testenv]
-        platform = linux
+        commands =
+            linux: pytest --numprocesses=auto
+            darwin,win32: pytest
+
+Settings without a platform factor apply to all platforms. This is ideal for most cross-platform projects.
+
+**Platform skipping** - Skip entire environments when platform doesn't match:
 
 .. tab:: TOML
 
@@ -446,14 +440,20 @@ Settings without a platform factor apply to all platforms. This is ideal for mos
         [env_run_base]
         platform = "linux"
 
+.. tab:: INI
+
+    .. code-block:: ini
+
+        [testenv]
+        platform = linux
+
 This skips the entire environment on non-Linux systems. Use this only when an environment genuinely cannot run on other
 platforms (e.g., testing Linux-specific kernel features).
 
 .. note::
 
     Platform factors are supported in both INI and TOML formats. INI uses inline syntax (``linux: command``), while TOML
-    uses ``replace = "if"`` with ``factor.NAME`` conditions (see :ref:`conditional-value-reference`). Generative
-    environments are currently only supported in the INI format (see :ref:`toml-feature-gaps`).
+    uses ``replace = "if"`` with ``factor.NAME`` conditions (see :ref:`conditional-value-reference`).
 
 .. _howto_conditional_values:
 
@@ -706,6 +706,61 @@ coverage combining, documentation builds, or linting environments that share the
 This reads your ``pyproject.toml`` directly (no build step) and installs ``httpx``, ``sphinx``, and ``furo`` into the
 environment. If your dependencies are dynamic, tox falls back to using the packaging environment to extract metadata.
 
+**********************************************
+ Install locked dependencies from pylock.toml
+**********************************************
+
+If your project maintains :PEP:`751` lock files (``pylock.toml``), you can install those locked dependencies directly
+via the :ref:`pylock` configuration. The :ref:`pylock` setting is mutually exclusive with :ref:`deps` — use one or the
+other. Each package in the lock file is installed as a pinned requirement (``name==version``) with ``--no-deps`` (since
+the lock file already contains all transitive dependencies), and tox automatically recreates the environment when the
+lock file changes.
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+         # tox.toml
+         [env_run_base]
+         pylock = "pylock.toml"
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+         [testenv]
+         pylock = pylock.toml
+
+The locked dependencies are installed first, then the project itself is built and installed normally (unless
+``skip_install`` or ``package = "skip"`` is set). When the lock file contains :PEP:`751` extras or dependency groups,
+use the existing :ref:`extras` and :ref:`dependency_groups` settings to select which ones to include. Packages with
+markers like ``'docs' in extras`` or ``'dev' in dependency_groups`` are filtered at install time — only packages
+matching the selected extras/groups (and the target Python's platform markers) are installed:
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+         [env.docs]
+         pylock = "pylock.toml"
+         extras = ["docs"]
+
+         [env.dev]
+         pylock = "pylock.toml"
+         dependency_groups = ["dev"]
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+         [testenv:docs]
+         pylock = pylock.toml
+         extras = docs
+
+         [testenv:dev]
+         pylock = pylock.toml
+         dependency_groups = dev
+
 .. ------------------------------------------------------------------------------------------
 
 .. Environment Customization
@@ -738,6 +793,130 @@ variables:
 
 Any CLI flag for virtualenv can be set as an environment variable with the ``VIRTUALENV_`` prefix (in uppercase).
 Consult the :pypi:`virtualenv` documentation for supported values.
+
+.. _howto_clean_caches:
+
+*****************************************
+ Clean external caches during recreation
+*****************************************
+
+Tools like :pypi:`pre-commit` maintain their own caches outside the tox environment directory. When you recreate an
+environment with ``tox run -r``, those external caches are left behind. Use :ref:`recreate_commands` to run cleanup
+commands inside the old environment before it is removed:
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+         [env_run_base]
+         deps = ["pre-commit"]
+         recreate_commands = [["{env_python}", "-Im", "pre_commit", "clean"]]
+         commands = [["pre-commit", "run", "--all-files"]]
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+         [testenv]
+         deps = pre-commit
+         recreate_commands = {env_python} -Im pre_commit clean
+         commands = pre-commit run --all-files
+
+These commands only run during recreation -- they are skipped on first creation and on normal re-runs. Failures are
+logged as warnings and never block the recreation itself.
+
+*****************************************
+ Test across old and new Python versions
+*****************************************
+
+When a project must support both very old (e.g. Python 3.6) and very new (e.g. Python 3.15) interpreters, no single
+virtualenv release covers both. Use :ref:`virtualenv_spec` to pin a different virtualenv version per environment:
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+         env_list = ["3.6", "3.15", "3.13"]
+
+         [env_run_base]
+         deps = ["pytest"]
+         commands = [["pytest"]]
+
+         [env."3.6"]
+         virtualenv_spec = "virtualenv<20.22.0"
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+         [tox]
+         env_list = 3.6, 3.15, 3.13
+
+         [testenv]
+         deps = pytest
+         commands = pytest
+
+         [testenv:3.6]
+         virtualenv_spec = virtualenv<20.22.0
+
+The ``3.6`` environment uses an older virtualenv that still supports Python 3.6, while other environments use the
+default (imported) virtualenv. The first run bootstraps the pinned version; subsequent runs reuse the cached bootstrap.
+
+.. _howto_generate_matrix:
+
+***************************************
+ Generate environment matrices in TOML
+***************************************
+
+Use the ``product`` dict in :ref:`env_list` to generate environments from the Cartesian product of factor groups. Each
+factor group is an array of strings or a range dict. Combinations are joined with ``-``:
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+         env_list = [
+             "lint",
+             { product = [
+                 { prefix = "py3", start = 12, stop = 14 },
+                 ["django42", "django50"],
+             ] },
+         ]
+
+         [env_run_base]
+         package = "skip"
+         deps = [
+             "pytest",
+             { replace = "if", condition = "factor.django42", then = ["Django>=4.2,<4.3"] },
+             { replace = "if", condition = "factor.django50", then = ["Django>=5.0,<5.1"] },
+         ]
+         commands = [["pytest"]]
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+         [tox]
+         env_list = py3{12-14}-django{42,50}
+
+         [testenv]
+         package = skip
+         deps =
+             pytest
+             django42: Django>=4.2,<4.3
+             django50: Django>=5.0,<5.1
+         commands = pytest
+
+This generates ``lint``, ``py312-django42``, ``py312-django50``, ``py313-django42``, ``py313-django50``,
+``py314-django42``, ``py314-django50``.
+
+To skip incompatible combinations, add ``exclude`` -- this is only available in TOML:
+
+.. code-block:: toml
+
+    env_list = [
+        { product = [["py312", "py313"], ["django42", "django50"]], exclude = ["py312-django50"] },
+    ]
 
 ***************************
  Ignore command exit codes
@@ -1010,6 +1189,53 @@ When an environment fails, use these techniques to investigate:
 
        tox run -e 3.13 -r
 
+6. **Check for misplaced config keys**. Options in the wrong section are silently ignored. Use ``-v`` to surface
+   warnings about unrecognized keys, or run ``tox config`` to see ``# !!! unused:`` markers:
+
+   .. code-block:: bash
+
+       tox run -v
+       tox config -e 3.13
+
+.. _skip-env-install:
+
+**************************************
+ Reuse an environment without network
+**************************************
+
+When working offline, on a plane, or in an air-gapped CI environment, tox still attempts to install dependencies and the
+project package on every run. If the environment was previously set up and nothing has changed, you can skip all
+installation steps with ``--skip-env-install``:
+
+.. code-block:: bash
+
+    # First run: installs everything normally
+    tox run -e 3.13
+
+    # Subsequent runs: skip all installation, reuse existing environment
+    tox run -e 3.13 --skip-env-install
+
+This skips:
+
+- Installing ``deps`` and dependency groups
+- Building and installing the project package
+
+The environment must already exist from a previous run. Commands (``commands_pre``, ``commands``, ``commands_post``)
+still execute normally.
+
+``--skip-env-install`` differs from ``--skip-pkg-install`` in scope: ``--skip-pkg-install`` only skips the package build
+and install step, while ``--skip-env-install`` additionally skips dependency installation. Use ``--skip-pkg-install``
+when you want to refresh dependencies but not rebuild the package. Use ``--skip-env-install`` when you want to skip all
+installation entirely.
+
+.. code-block:: bash
+
+    # Skip only package build/install, still install deps
+    tox run -e 3.13 --skip-pkg-install
+
+    # Skip everything: deps + package
+    tox run -e 3.13 --skip-env-install
+
 .. _run-interactive-programs:
 
 **************************
@@ -1081,6 +1307,104 @@ Signal numbers are documented in the `signal man page <https://man7.org/linux/ma
 .. ------------------------------------------------------------------------------------------
 
 .. Advanced & Specialized (niche topics at end)
+
+.. ------------------------------------------------------------------------------------------
+
+.. _pin-default-python:
+
+******************************
+ Pin a default Python version
+******************************
+
+When environments like ``lint`` or ``type`` don't contain a Python factor, tox uses the Python it's installed into. This
+varies across machines -- a contributor on Ubuntu 22.04 gets Python 3.10, while Fedora 37 gives 3.11 -- leading to
+unreproducible results or failures when dependencies don't support the host's Python version.
+
+Set :ref:`default_base_python` to pin a fallback interpreter for all environments without a Python factor:
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+        [env_run_base]
+        default_base_python = ["3.14", "3.13"]
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+        [testenv]
+        default_base_python = 3.14, 3.13
+
+Environments with a Python factor (e.g. ``3.13``, ``py313``) or an explicit :ref:`base_python` setting are unaffected.
+
+.. ------------------------------------------------------------------------------------------
+
+.. _open-ended-ranges:
+
+**********************************************
+ Future-proof env_list with open-ended ranges
+**********************************************
+
+Instead of updating ``env_list`` every time a new Python version is released, use open-ended ranges:
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+        env_list = [
+            { product = [{ prefix = "py3", start = 10 }] },
+            "lint",
+        ]
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+        [tox]
+        env_list = py3{10-}, lint
+
+This expands up to the latest `supported CPython version <https://devguide.python.org/versions/>`_ known to tox. When
+you upgrade tox after a new Python release, the range automatically includes the new version.
+
+To start from the oldest supported version:
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+        env_list = [
+            { product = [{ prefix = "py3", stop = 13 }] },
+            "lint",
+        ]
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+        [tox]
+        env_list = py3{-13}, lint
+
+This expands down from the oldest supported CPython version. Both forms can be mixed with explicit values:
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+        env_list = [
+            { product = [{ prefix = "py3", start = 10 }] },
+            "py38",
+            "lint",
+        ]
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+        [tox]
+        env_list = py3{10-, 8}, lint
+
+See :ref:`generative-environment-list` for the full range syntax reference.
 
 .. ------------------------------------------------------------------------------------------
 
@@ -1197,9 +1521,8 @@ TOML is the recommended configuration format for new projects. Here is how commo
 - Positional arguments use replacement objects: ``{ replace = "posargs", default = ["tests"] }`` vs ``{posargs:tests}``
 - Environment variables in ``set_env`` use ``{ replace = "env", name = "VAR" }`` vs ``{env:VAR}``
 - Section references use ``{ replace = "ref", ... }`` vs ``{[section]key}``
-- Factor conditions use ``{ replace = "if", condition = "factor.NAME", ... }`` vs ``NAME:`` (see
-  :ref:`toml-feature-gaps`)
-- No generative environment lists in TOML (see :ref:`toml-feature-gaps`)
+- Factor conditions use ``{ replace = "if", condition = "factor.NAME", ... }`` vs ``NAME:``
+- Generative environment lists use ``{ product = [...] }`` dicts vs ``{a,b}-{c,d}`` brace expansion
 
 *************************************
  Format your tox configuration files

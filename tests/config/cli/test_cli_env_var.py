@@ -55,6 +55,7 @@ def test_verbose_no_test() -> None:
         "exit_and_dump_after": 0,
         "skip_missing_interpreters": "config",
         "skip_pkg_install": False,
+        "skip_env_install": False,
         "recreate": False,
         "no_recreate_provision": False,
         "no_test": True,
@@ -72,6 +73,7 @@ def test_verbose_no_test() -> None:
         "labels": [],
         "skip_env": "",
         "list_dependencies": is_ci(),
+        "remainder": [],
     }
 
 
@@ -126,6 +128,7 @@ def test_env_var_exhaustive_parallel_values(
         "site_packages": False,
         "skip_missing_interpreters": "config",
         "skip_pkg_install": False,
+        "skip_env_install": False,
         "verbose": 5,
         "work_dir": None,
         "root_dir": None,
@@ -135,6 +138,7 @@ def test_env_var_exhaustive_parallel_values(
         "exit_and_dump_after": 0,
         "skip_env": "",
         "list_dependencies": is_ci(),
+        "remainder": [],
     }
     assert options.parsed.verbosity == 4
     assert options.cmd_handlers == core_handlers

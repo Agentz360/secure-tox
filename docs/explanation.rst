@@ -35,8 +35,11 @@ Below is a graphical representation of the tox lifecycle:
         subgraph envloop [for each selected environment]
             direction TB
             create[Create environment]
-            create --> deps[Install dependencies]
-            deps --> pkg{package project?}
+            create --> depmode{pylock set?}
+            depmode -- yes --> pylock[Install from pylock.toml]
+            depmode -- no --> deps[Install deps + dependency groups]
+            pylock --> pkg{package project?}
+            deps --> pkg
             pkg -- yes --> build[Build and install package]
             pkg -- no --> extra
             build --> extra[Run extra_setup_commands]
@@ -54,6 +57,7 @@ Below is a graphical representation of the tox lifecycle:
         classDef cmdStyle fill:#ede9fe,stroke:#8b5cf6,stroke-width:2px,color:#3b0764
         classDef reportStyle fill:#ccfbf1,stroke:#14b8a6,stroke-width:2px,color:#134e4a
         classDef decisionStyle fill:#fef9c3,stroke:#eab308,stroke-width:2px,color:#713f12
+        classDef pylockStyle fill:#e0e7ff,stroke:#6366f1,stroke-width:2px,color:#312e81
 
         class config configStyle
         class create,deps envStyle
@@ -61,7 +65,8 @@ Below is a graphical representation of the tox lifecycle:
         class extra setupStyle
         class cmds cmdStyle
         class report reportStyle
-        class pkg decisionStyle
+        class depmode,pkg decisionStyle
+        class pylock pylockStyle
 
 The primary tox states are:
 
@@ -73,14 +78,26 @@ The primary tox states are:
    1. **Creation**: create a fresh environment; by default :pypi:`virtualenv` is used, but configurable via
       :ref:`runner`. For ``virtualenv`` tox will use the `virtualenv discovery logic
       <https://virtualenv.pypa.io/en/latest/user_guide.html#python-discovery>`_ where the python specification is
-      defined by the tox environments :ref:`base_python` (if not set will default to the environments name). This is
-      created at first run only to be reused at subsequent runs. If certain aspects of the project change (python
-      version, dependencies removed, etc.), a re-creation of the environment is automatically triggered. To force the
-      recreation tox can be invoked with the :ref:`recreate` flag (``-r``).
-   2. **Install dependencies** (optional): install the environment dependencies specified inside the ``deps``
-      configuration section, and then the earlier packaged source distribution. By default ``pip`` is used to install
-      packages, however one can customize this via ``install_command``.
+      defined by the tox environments :ref:`base_python` (if not set will try to extract it from the environment name,
+      then fall back to :ref:`default_base_python`, and finally to the Python running tox). This is created at first run
+      only to be reused at subsequent runs. If certain aspects of the project change (python version, dependencies
+      removed, etc.), a re-creation of the environment is automatically triggered. To force the recreation tox can be
+      invoked with the :ref:`recreate` flag (``-r``). When recreation occurs, any :ref:`recreate_commands` run inside
+      the old environment before its directory is removed -- this lets tools like pre-commit clean their external
+      caches. Failures in these commands are logged as warnings but never block the recreation.
+   2. **Install dependencies** (optional): install the environment dependencies. When :ref:`pylock` is set, tox installs
+      locked dependencies from the :PEP:`751` lock file (filtered by extras, dependency groups, and platform markers).
+      Otherwise, it installs :ref:`deps` and :ref:`dependency_groups`. By default ``pip`` is used to install packages,
+      however one can customize this via ``install_command``.
    3. **Packaging** (optional): create a distribution of the current project (see :ref:`packaging` below).
+
+   Steps 2 and 3 can be selectively skipped with CLI flags:
+
+   - ``--skip-pkg-install`` skips step 3 only (packaging and package installation), while still installing dependencies.
+   - ``--skip-env-install`` skips both steps 2 and 3 entirely, reusing the environment as-is. This is useful when
+     working offline or when the environment is already fully set up from a previous run. See :ref:`skip-env-install`
+     for practical usage.
+
    4. **Extra setup commands** (optional): run the :ref:`extra_setup_commands` specified. These execute after all
       installations complete but before test commands, and run during the ``--notest`` phase.
    5. **Commands**: run the specified commands in the specified order. Whenever the exit code of any of them is not
@@ -184,6 +201,57 @@ tox discovers package dependency changes (via :PEP:`621` or :PEP:`517`
 the next run. When a dependency is removed the entire environment is automatically recreated. This also works for
 ``requirements`` files within :ref:`deps`. In most cases you should never need to use the ``--recreate`` flag -- tox
 detects changes and applies them automatically.
+
+.. _pylock-explanation:
+
+Lock file installation (PEP 751)
+================================
+
+.. versionadded:: 4.44
+
+The :ref:`pylock` setting installs dependencies from a :PEP:`751` lock file (``pylock.toml``). It is mutually exclusive
+with :ref:`deps` — a lock file already contains all transitive dependencies with exact versions, so mixing both sources
+would create conflicts. Lock files differ from ``deps`` in that every dependency is already resolved — the file contains
+exact versions, markers, and artifact URLs for every package.
+
+**Extras and dependency groups:** lock files can declare ``extras`` and ``dependency-groups`` at the top level, with
+per-package markers like ``'docs' in extras`` or ``'dev' in dependency_groups``. Use the existing :ref:`extras` and
+:ref:`dependency_groups` settings to select which groups to include — tox evaluates these markers together with platform
+markers (``sys_platform``, ``python_version``, etc.) against the **target** Python interpreter (not the host running
+tox) to filter packages at install time.
+
+**How it works today:** pip does not yet support installing from ``pylock.toml`` directly. tox parses the lock file
+using the ``packaging.pylock`` module, evaluates markers to filter packages, transpiles matching packages to a temporary
+requirements file (``{env_dir}/pylock.txt``), and passes it to pip with ``--no-deps``. The ``--no-deps`` flag prevents
+pip from re-resolving transitive dependencies, ensuring the exact versions from the lock file are installed.
+
+**Plugin support:** the ``Pylock`` object is passed through the ``tox_on_install`` plugin hook. Installer plugins can
+inspect it via ``isinstance(arguments, Pylock)`` and handle lock files natively (e.g. ``uv pip install --pylock``)
+instead of relying on the transpile path.
+
+**Future:** when pip gains native ``pylock.toml`` support, the transpile step will be replaced with a direct pip
+invocation. No configuration changes will be needed.
+
+**Change detection** works the same as for ``deps``: tox caches the resolved requirements. When packages are added, only
+the new ones are installed. When packages are removed, the environment is recreated.
+
+Open-ended range bounds
+=======================
+
+Both INI and TOML support generative environment lists with open-ended ranges. INI uses curly-brace syntax
+(``py3{10-}``), while TOML uses range dicts (``{ prefix = "py3", start = 10 }``). Instead of probing the system for
+available interpreters (which would be slow and environment-dependent), tox tracks the `supported CPython versions
+<https://devguide.python.org/versions/>`_ via two constants:
+
+- ``LATEST_PYTHON_MINOR_MIN`` -- the oldest supported CPython minor version (currently **10**, for Python 3.10)
+- ``LATEST_PYTHON_MINOR_MAX`` -- the latest supported CPython minor version (currently **14**, for Python 3.14)
+
+These values are updated with each tox release. A right-open range ``{10-}`` uses ``LATEST_PYTHON_MINOR_MAX`` as its
+upper bound; a left-open range ``{-13}`` uses ``LATEST_PYTHON_MINOR_MIN`` as its lower bound.
+
+This design is deterministic and fast -- the expansion happens at configuration load time with no I/O -- while keeping
+environment lists future-proof across tox upgrades. Environments for interpreters not installed on the system are
+naturally skipped by the :ref:`skip_missing_interpreters` setting.
 
 ***************
  Main features
@@ -508,6 +576,36 @@ it falls back to the base section (:ref:`base` configuration). For ``tox.toml`` 
 
 Here ``test`` inherits ``commands`` from the base because it is not specified in ``[env.test]``.
 
+.. _virtualenv-version-pinning:
+
+****************************
+ Virtualenv version pinning
+****************************
+
+tox creates isolated environments using :pypi:`virtualenv`, which it imports as a library. This works well when the
+installed virtualenv supports all target Python versions, but breaks down at the edges: older virtualenv releases
+(pre-20.22) are required for Python 3.6 support, while the latest virtualenv is needed for Python 3.15+. Since tox can
+only import one virtualenv version per process, projects that need both old and new Pythons in a single ``tox.toml`` hit
+a wall.
+
+The :ref:`virtualenv_spec` setting resolves this by decoupling the virtualenv used for environment creation from the one
+tox imports. When set, tox:
+
+1. Creates a bootstrap venv (using the stdlib ``venv`` module) in ``.tox/.virtualenv-bootstrap/``.
+2. Installs the specified virtualenv version into that bootstrap venv via pip.
+3. Runs the bootstrapped virtualenv as a subprocess instead of calling ``session_via_cli()`` from the imported library.
+
+The bootstrap is content-addressed by a hash of the spec string, so different specs get separate cached environments. A
+file lock protects against concurrent bootstrap creation (relevant in parallel mode). Once bootstrapped, subsequent runs
+skip directly to step 3.
+
+When ``virtualenv_spec`` is empty (the default), tox uses the imported virtualenv with zero overhead -- the subprocess
+path only activates when explicitly configured. The spec is included in the environment cache key, so changing it
+triggers automatic recreation.
+
+This design mirrors tox's own auto-provisioning mechanism (``requires`` / ``min_version``), where tox bootstraps itself
+into a separate environment when the running installation doesn't meet the declared requirements.
+
 *******************
  Known limitations
 *******************
@@ -546,6 +644,53 @@ Alternative workarounds if you cannot use ``--no-capture``:
 
 - For IPython, pass ``--simple-prompt`` to disable ``prompt_toolkit``'s advanced terminal features.
 - For other tools, look for a "dumb terminal" or "no-color" mode that avoids VT100 escape sequences.
+
+Debian/Ubuntu without ``python3-venv``
+======================================
+
+On Debian and Ubuntu, the system Python is split into multiple packages. The ``python3`` package does not include the
+:mod:`venv` module or :mod:`ensurepip` — these are in the separate ``python3-venv`` package.
+
+tox itself is **not affected** because it uses :pypi:`virtualenv` (which bundles its own bootstrap mechanism) rather
+than stdlib :mod:`venv`. However, tools that tox *runs as commands* inside environments may use stdlib :mod:`venv`
+internally and fail. A common example is :pypi:`build` (``pyproject-build``), which creates an isolated build
+environment using :mod:`venv` when a recent ``pip`` is available.
+
+If you see errors like:
+
+.. code-block:: text
+
+    The virtual environment was not created successfully because ensurepip is not available.
+    On Debian/Ubuntu systems, you need to install the python3-venv package.
+
+this is the tool inside the tox environment hitting the missing system package, not tox itself.
+
+**Solutions:**
+
+- Install the system venv package: ``apt install python3-venv`` (or ``python3.X-venv`` for a specific version).
+- Use :pypi:`tox-uv`, which replaces both the environment creation and package installation with :pypi:`uv`, avoiding
+  the stdlib :mod:`venv` dependency entirely.
+
+Misplaced configuration keys
+============================
+
+tox configuration is split into two sections: **core** (``[tox]`` / top-level TOML) and **environment** (``[testenv]`` /
+``env_run_base`` in TOML). Options placed in the wrong section are silently ignored because tox cannot distinguish a
+misplaced option from a plugin-defined key that isn't loaded yet (e.g. during provisioning).
+
+To detect misplaced keys:
+
+- Run ``tox run -v`` — unused keys are printed as warnings before the final report.
+- Run ``tox config`` — unused keys appear as ``# !!! unused:`` comments per section.
+
+For example, putting ``ignore_base_python_conflict`` in ``[testenv]`` instead of ``[tox]`` produces:
+
+.. code-block:: text
+
+    [testenv:py] unused config key(s): ignore_base_python_conflict
+
+See the :ref:`Core <conf-core>` and :ref:`tox environment <conf-testenv>` reference sections for which options belong
+where.
 
 ******************
  Related projects
