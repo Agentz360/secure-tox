@@ -455,6 +455,61 @@ platforms (e.g., testing Linux-specific kernel features).
     Platform factors are supported in both INI and TOML formats. INI uses inline syntax (``linux: command``), while TOML
     uses ``replace = "if"`` with ``factor.NAME`` conditions (see :ref:`conditional-value-reference`).
 
+.. _howto_architecture:
+
+Targeting a specific CPU architecture
+=====================================
+
+.. versionadded:: 4.46
+
+On machines that support multiple CPU architectures (e.g. Apple Silicon running ``arm64`` natively and ``x86_64`` via
+Rosetta 2, or Linux running ``aarch64`` and ``x86_64`` via ``qemu-user``), you can constrain tox environments to a
+specific architecture by appending the ISA name to :ref:`base_python`.
+
+The architecture is derived from :func:`python:sysconfig.get_platform` (e.g. ``macosx-14.0-arm64``, ``linux-x86_64``)
+and normalized by :pypi:`virtualenv` (``amd64`` → ``x86_64``, ``aarch64`` → ``arm64``).
+
+.. tab:: TOML
+
+    .. code-block:: toml
+
+        # Run tests on both arm64 and x86_64 interpreters
+        env_list = ["arm64", "x86_64"]
+
+        [env.arm64]
+        base_python = ["cpython3.12-64-arm64"]
+        commands = [["pytest"]]
+
+        [env.x86_64]
+        base_python = ["cpython3.12-64-x86_64"]
+        commands = [["pytest"]]
+
+.. tab:: INI
+
+    .. code-block:: ini
+
+        [tox]
+        env_list = arm64, x86_64
+
+        [testenv:arm64]
+        base_python = cpython3.12-64-arm64
+        commands = pytest
+
+        [testenv:x86_64]
+        base_python = cpython3.12-64-x86_64
+        commands = pytest
+
+If the discovered interpreter's architecture does not match the requested one, tox raises a failure — just as it does
+for Python version mismatches. The matched architecture is recorded in the tox journal under the ``machine`` key.
+
+Common architecture values (after normalization):
+
+- ``x86_64`` — 64-bit x86 (Intel/AMD)
+- ``arm64`` — 64-bit ARM (Apple Silicon, Graviton, Ampere)
+- ``x86`` — 32-bit x86
+- ``s390x`` — IBM Z mainframe
+- ``ppc64le`` — 64-bit PowerPC little-endian
+
 .. _howto_conditional_values:
 
 *********************************
@@ -917,6 +972,46 @@ To skip incompatible combinations, add ``exclude`` -- this is only available in 
     env_list = [
         { product = [["py312", "py313"], ["django42", "django50"]], exclude = ["py312-django50"] },
     ]
+
+.. _howto_env_base_matrix:
+
+***********************************************
+ Test a matrix of configurations with env_base
+***********************************************
+
+When multiple environments share the same deps, commands, and other settings but differ only by factors, use
+``env_base`` templates instead of repeating configuration across ``[env.X]`` sections. The ``factors`` key defines the
+Cartesian product of factor groups, and each generated environment inherits all other settings from the template:
+
+.. code-block:: toml
+
+    [env_base.django]
+    factors = [
+        { prefix = "py3", start = 13, stop = 14 },
+        ["django42", "django50"],
+    ]
+    package = "skip"
+    deps = [
+        "pytest",
+        { replace = "if", condition = "factor.django42", then = ["Django>=4.2,<4.3"] },
+        { replace = "if", condition = "factor.django50", then = ["Django>=5.0,<5.1"] },
+    ]
+    commands = [["pytest"]]
+
+This generates ``django-py313-django42``, ``django-py313-django50``, ``django-py314-django42``,
+``django-py314-django50``. Each environment resolves factor conditions independently -- ``django-py313-django42`` gets
+``Django>=4.2,<4.3`` while ``django-py314-django50`` gets ``Django>=5.0,<5.1``.
+
+To override a specific generated environment, add an explicit ``[env.NAME]`` section:
+
+.. code-block:: toml
+
+    [env.django-py314-django50]
+    description = "bleeding edge"
+
+The inheritance chain is: ``[env.{name}]`` > ``[env_base.{template}]`` > ``[env_run_base]``.
+
+See :ref:`env-base-templates` for the full reference.
 
 ***************************
  Ignore command exit codes

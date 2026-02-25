@@ -79,12 +79,14 @@ The primary tox states are:
       :ref:`runner`. For ``virtualenv`` tox will use the `virtualenv discovery logic
       <https://virtualenv.pypa.io/en/latest/user_guide.html#python-discovery>`_ where the python specification is
       defined by the tox environments :ref:`base_python` (if not set will try to extract it from the environment name,
-      then fall back to :ref:`default_base_python`, and finally to the Python running tox). This is created at first run
-      only to be reused at subsequent runs. If certain aspects of the project change (python version, dependencies
-      removed, etc.), a re-creation of the environment is automatically triggered. To force the recreation tox can be
-      invoked with the :ref:`recreate` flag (``-r``). When recreation occurs, any :ref:`recreate_commands` run inside
-      the old environment before its directory is removed -- this lets tools like pre-commit clean their external
-      caches. Failures in these commands are logged as warnings but never block the recreation.
+      then fall back to :ref:`default_base_python`, and finally to the Python running tox). The specification can
+      include a CPU architecture suffix (e.g. ``cpython3.12-64-arm64``) to constrain discovery to a specific ISA — the
+      architecture is derived from :func:`python:sysconfig.get_platform` and validated after discovery. This is created
+      at first run only to be reused at subsequent runs. If certain aspects of the project change (python version,
+      dependencies removed, etc.), a re-creation of the environment is automatically triggered. To force the recreation
+      tox can be invoked with the :ref:`recreate` flag (``-r``). When recreation occurs, any :ref:`recreate_commands`
+      run inside the old environment before its directory is removed -- this lets tools like pre-commit clean their
+      external caches. Failures in these commands are logged as warnings but never block the recreation.
    2. **Install dependencies** (optional): install the environment dependencies. When :ref:`pylock` is set, tox installs
       locked dependencies from the :PEP:`751` lock file (filtered by extras, dependency groups, and platform markers).
       Otherwise, it installs :ref:`deps` and :ref:`dependency_groups`. By default ``pip`` is used to install packages,
@@ -252,6 +254,27 @@ upper bound; a left-open range ``{-13}`` uses ``LATEST_PYTHON_MINOR_MIN`` as its
 This design is deterministic and fast -- the expansion happens at configuration load time with no I/O -- while keeping
 environment lists future-proof across tox upgrades. Environments for interpreters not installed on the system are
 naturally skipped by the :ref:`skip_missing_interpreters` setting.
+
+Environment templates (``env_base``)
+====================================
+
+tox provides three levels for configuring environments:
+
+1. **``env_run_base``** -- global defaults inherited by all run environments. Use this when every environment shares the
+   same setting (e.g. a common ``deps`` or ``commands``).
+2. **``env_base.{name}``** -- named templates that generate multiple environments from factor combinations. Use this
+   when a group of environments shares configuration but differs from other groups. The ``factors`` key defines which
+   environments to generate via Cartesian product; all other keys in the section become the template's defaults.
+3. **``env.{name}``** -- explicit per-environment configuration. Use this for one-off environments (like ``lint``) or to
+   override specific settings in a generated environment.
+
+The inheritance chain resolves bottom-up: ``env.{name}`` > ``env_base.{template}`` > ``env_run_base``. A setting in
+``env.{name}`` shadows the same setting in ``env_base``, which in turn shadows ``env_run_base``.
+
+Templates themselves are not runnable environments -- they exist only to define shared configuration. Only the generated
+environments (template name + factor suffix) appear in ``tox list`` and can be run.
+
+For the configuration reference, see :ref:`env-base-templates`. For practical recipes, see :ref:`howto_env_base_matrix`.
 
 ***************
  Main features
