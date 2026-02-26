@@ -16,8 +16,10 @@ jobs:
       - uses: actions/checkout@v6
       - name: Fork and clone SchemaStore
         run: gh repo fork SchemaStore/schemastore --clone --remote -- /tmp/schemastore
-      - name: Create or reset branch
-        run: git switch -C "$BRANCH"
+      - name: Create or reset branch from upstream
+        run: |
+          git fetch upstream master
+          git switch -C "$BRANCH" upstream/master
         working-directory: /tmp/schemastore
       - name: Copy schema with SchemaStore $id
         run: |
@@ -29,11 +31,23 @@ jobs:
           with open('/tmp/schemastore/src/schemas/json/tox.json', 'w') as f:
               json.dump(schema, f, indent=2)
               f.write('\n')
+          partial = {
+              '\$schema': 'http://json-schema.org/draft-07/schema#',
+              '\$id': 'https://json.schemastore.org/partial-tox.json',
+              'title': 'Tox configuration in pyproject.toml',
+              'description': 'Schema for the [tool.tox] section in pyproject.toml',
+              'type': 'object',
+              'allOf': [{'\$ref': 'https://json.schemastore.org/tox.json'}],
+              'additionalProperties': True,
+          }
+          with open('/tmp/schemastore/src/schemas/json/partial-tox.json', 'w') as f:
+              json.dump(partial, f, indent=2)
+              f.write('\n')
           "
       - name: Check for changes
         id: diff
         run: |
-          git add src/schemas/json/tox.json
+          git add src/schemas/json/tox.json src/schemas/json/partial-tox.json
           if git diff --cached --quiet; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -43,6 +57,7 @@ jobs:
       - name: Commit and push
         if: steps.diff.outputs.changed == 'true'
         run: |
+          gh auth setup-git
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Update tox JSON Schema to ${{ github.ref_name }}"
@@ -51,14 +66,16 @@ jobs:
       - name: Create or update pull request
         if: steps.diff.outputs.changed == 'true'
         run: |
-          if ! gh pr view "$BRANCH" --repo SchemaStore/schemastore > /dev/null 2>&1; then
+          FORK_OWNER=$(gh api user --jq .login)
+          HEAD="$FORK_OWNER:$BRANCH"
+          if ! gh pr view "$HEAD" --repo SchemaStore/schemastore > /dev/null 2>&1; then
             gh pr create \
               --repo SchemaStore/schemastore \
+              --head "$HEAD" \
               --title "Update tox JSON Schema to ${{ github.ref_name }}" \
               --body "Updates tox's JSON Schema to [${{ github.sha }}](https://github.com/tox-dev/tox/commit/${{ github.sha }}) (release ${{ github.ref_name }})."
           else
-            gh pr edit "$BRANCH" --repo SchemaStore/schemastore \
+            gh pr edit "$HEAD" --repo SchemaStore/schemastore \
               --title "Update tox JSON Schema to ${{ github.ref_name }}" \
               --body "Updates tox's JSON Schema to [${{ github.sha }}](https://github.com/tox-dev/tox/commit/${{ github.sha }}) (release ${{ github.ref_name }})."
           fi
-        working-directory: /tmp/schemastore

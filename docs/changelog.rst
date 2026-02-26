@@ -7,6 +7,39 @@
 .. towncrier release notes start
 
 **********************
+ v4.46.3 (2026-02-25)
+**********************
+
+Bug fixes - 4.46.3
+==================
+
+- Fix SchemaStore update workflow creating PRs with merge conflicts by branching from upstream master - by
+  :user:`gaborbernat`. (:issue:`3828`)
+- Fixed the minimum version of virtualenv, to avoid incompatibility. (:issue:`3829`)
+
+**********************
+ v4.46.2 (2026-02-25)
+**********************
+
+Bug fixes - 4.46.2
+==================
+
+- Fix SchemaStore update workflow authentication and PR creation for fork repositories - by :user:`gaborbernat`.
+  (:issue:`3826`)
+
+**********************
+ v4.46.1 (2026-02-25)
+**********************
+
+Bug fixes - 4.46.1
+==================
+
+- Allow glob patterns (``*``, ``?``) in ``depends`` configuration for ini files - by :user:`gaborbernat`.
+  (:issue:`3822`)
+- Fix false positive schema validation errors with tombi by adding ``additionalProperties: true`` to
+  ``partial-tox.json`` on SchemaStore - by :user:`gaborbernat`. (:issue:`3823`)
+
+**********************
  v4.46.0 (2026-02-24)
 **********************
 
